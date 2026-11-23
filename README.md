@@ -2,7 +2,7 @@
 
 > Use to insert photo in excel report. This is work project develop in worktime.
 
-本工具為專為 SiC 檢驗報告設計的**本機純記憶體執行 · 零落地暫存** Excel 照片批次自動填入桌面網頁工具。
+本工具為專報告設計的**本機純記憶體執行 · 零落地暫存** Excel 照片批次自動填入桌面網頁工具。
 
 ---
 
