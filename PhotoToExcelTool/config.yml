@@ -1,0 +1,346 @@
+accept_extension:
+  - ".jpg"
+  - ".png"
+
+rules:
+  - sheet: "Ring #1"
+    size:
+      width: 7.01        # 照片寬度 (cm)
+      height: 8.65       # 照片高度 (cm)
+      left_padding: 2.0
+      top_padding: 1.0 #如果有要設定就新增top_padding,否則採用預設的1mm
+      
+    IQC:
+      folder: "PRE/01"
+      cells:
+        Pre1: "B7"
+        Pre2: "D7"
+
+
+    FQC:
+      folder: "FQC/01"
+      cells:
+        1: "F7"
+        2: "H7"
+
+  - sheet: "Ring #2"
+    size:
+      width: 7.01        # 照片寬度 (cm)
+      height: 8.65       # 照片高度 (cm)
+      left_padding: 2.0
+    IQC:
+      folder: "PRE/02"
+      cells:
+        1: "B7"
+        2: "D7"
+
+
+    FQC:
+      folder: "FQC/02"
+      cells:
+        1: "F7"
+        2: "H7"
+
+  - sheet: "Ring #3"
+    size:
+      width: 7.01        # 照片寬度 (cm)
+      height: 8.65       # 照片高度 (cm)
+      left_padding: 2.0
+    IQC:
+      folder: "PRE/03"
+      cells:
+        1: "B7"
+        2: "D7"
+
+
+    FQC:
+      folder: "FQC/03"
+      cells:
+        1: "F7"
+        2: "H7"
+
+  - sheet: "Ring #4"
+    size:
+      width: 7.01        # 照片寬度 (cm)
+      height: 8.65       # 照片高度 (cm)
+      left_padding: 2.0
+    IQC:
+      folder: "PRE/04"
+      cells:
+        1: "B7"
+        2: "D7"
+
+
+    FQC:
+      folder: "FQC/04"
+      cells:
+        1: "F7"
+        2: "H7"
+
+  - sheet: "Ring #5"
+    size:
+      width: 7.01        # 照片寬度 (cm)
+      height: 8.65       # 照片高度 (cm)
+      left_padding: 2.0
+    IQC:
+      folder: "PRE/05"
+      cells:
+        1: "B7"
+        2: "D7"
+
+
+    FQC:
+      folder: "FQC/05"
+      cells:
+        1: "F7"
+        2: "H7"
+
+  - sheet: "Ring #6"
+    size:
+      width: 7.01        # 照片寬度 (cm)
+      height: 8.65       # 照片高度 (cm)
+      left_padding: 2.0
+    IQC:
+      folder: "PRE/06"
+      cells:
+        1: "B7"
+        2: "D7"
+
+
+    FQC:
+      folder: "FQC/06"
+      cells:
+        1: "F7"
+        2: "H7"
+
+  - sheet: "Susceptor Sidewalls"
+    size:
+      width: 8.50        # 照片寬度 (cm)
+      height: 11.00       # 照片高度 (cm)
+      left_padding: 2.0   # 儲存格左側留白 (mm)
+    IQC:
+      folder: "PRE/07"
+      cells:
+        1: "B7"
+        2: "B28"
+        3: "B49"
+        4: "B70"
+        5: "B91"
+        6: "B112"
+    FQC:
+      folder: "FQC/07"
+      cells:
+        1: "F7"
+        2: "F28"
+        3: "F49"
+        4: "F70"
+        5: "F91"
+        6: "F112"
+
+  - sheet: "Susceptor Sidewalls (2)"
+    size:
+      width: 8.50        # 照片寬度 (cm)
+      height: 11.00       # 照片高度 (cm)
+      left_padding: 2.0
+    IQC:
+      folder: "PRE/08"
+      cells:
+        1: "B7"
+        2: "B28"
+        3: "B49"
+        4: "B70"
+        5: "B91"
+        6: "B112"
+    FQC:
+      folder: "FQC/08"
+      cells:
+        1: "F7"
+        2: "F28"
+        3: "F49"
+        4: "F70"
+        5: "F91"
+        6: "F112"
+        
+  - sheet: "Upper Half Moon"
+    size:
+      width: 8.50        # 照片寬度 (cm)
+      height: 11.00       # 照片高度 (cm)
+      left_padding: 2.0
+    IQC:
+      folder: "PRE/09"
+      cells:
+        1: "B7"
+        2: "B28"
+        3: "B49"
+        4: "B70"
+        5: "B91"
+        6: "B112"
+
+    FQC:
+      folder: "FQC/09"
+      cells:
+        1: "F7"
+        2: "F28"
+        3: "F49"
+        4: "F70"
+        5: "F91"
+        6: "F112"
+
+  - sheet: "Transition Piece 2"
+    size:
+      width: 8.50        # 照片寬度 (cm)
+      height: 11.00       # 照片高度 (cm)
+      left_padding: 2.0
+    IQC:
+      folder: "PRE/10"
+      cells:
+        1: "B7"
+        2: "B28"
+        3: "B49"
+        4: "B70"
+        5: "B91"
+        6: "B112"
+
+    FQC:
+      folder: "FQC/10"
+      cells:
+        1: "F7"
+        2: "F28"
+        3: "F49"
+        4: "F70"
+        5: "F91"
+        6: "F112"
+  - sheet: "6in.Central Prot Cover"
+    size:
+      width: 8.50        # 照片寬度 (cm)
+      height: 11.00       # 照片高度 (cm)
+      left_padding: 2.0
+    IQC:
+      folder: "PRE/11"
+      cells:
+        1: "B7"
+        2: "B28"
+        3: "B49"
+        4: "B70"
+        5: "B91"
+        6: "B112"
+
+    FQC:
+      folder: "FQC/11"
+      cells:
+        1: "F7"
+        2: "F28"
+        3: "F49"
+        4: "F70"
+        5: "F91"
+        6: "F112"
+
+  - sheet: "6in.Left Upstream Prot Cover"
+    size:
+      width: 8.50        # 照片寬度 (cm)
+      height: 11.00       # 照片高度 (cm)
+      left_padding: 2.0
+    IQC:
+      folder: "PRE/12"
+      cells:
+        1: "B7"
+        2: "B28"
+        3: "B49"
+        4: "B70"
+        5: "B91"
+        6: "B112"
+
+    FQC:
+      folder: "FQC/12"
+      cells:
+        1: "F7"
+        2: "F28"
+        3: "F49"
+        4: "F70"
+        5: "F91"
+        6: "F112"
+
+  - sheet: "6in.Right Upstream Prot Cover"
+    size:
+      width: 8.50        # 照片寬度 (cm)
+      height: 11.00       # 照片高度 (cm)
+      left_padding: 2.0
+    IQC:
+      folder: "PRE/13"
+      cells:
+        1: "B7"
+        2: "B28"
+        3: "B49"
+        4: "B70"
+        5: "B91"
+        6: "B112"
+
+    FQC:
+      folder: "FQC/13"
+      cells:
+        1: "F7"
+        2: "F28"
+        3: "F49"
+        4: "F70"
+        5: "F91"
+        6: "F112"
+
+  - sheet: "6in.Long Right Prot Cover"
+    size:
+      width: 8.50        # 照片寬度 (cm)
+      height: 11.00       # 照片高度 (cm)
+      left_padding: 2.0
+    IQC:
+      folder: "PRE/14"
+      cells:
+        1: "B7"
+        2: "B28"
+        3: "B49"
+        4: "B70"
+        5: "B91"
+        6: "B112"
+
+    FQC:
+      folder: "FQC/14"
+      cells:
+        1: "F7"
+        2: "F28"
+        3: "F49"
+        4: "F70"
+        5: "F91"
+        6: "F112"
+
+  - sheet: "6in.Long Left Prot Cover"
+    size:
+      width: 8.50        # 照片寬度 (cm)
+      height: 11.00       # 照片高度 (cm)
+      left_padding: 2.0
+    IQC:
+      folder: "PRE/15"
+      cells:
+        1: "B7"
+        2: "B28"
+        3: "B49"
+        4: "B70"
+        5: "B91"
+        6: "B112"
+
+    FQC:
+      folder: "FQC/15"
+      cells:
+        1: "F7"
+        2: "F28"
+        3: "F49"
+        4: "F70"
+        5: "F91"
+        6: "F112"
+
+
+
+
+
+
+
+
+
+

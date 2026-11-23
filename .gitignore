@@ -1,0 +1,17 @@
+# .NET Build Artifacts
+bin/
+obj/
+publish/
+PhotoToExcelTool/bin/
+PhotoToExcelTool/obj/
+PhotoToExcelTool/publish/
+
+# IDE & OS Files
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+.DS_Store
+Thumbs.db
+~$*.xlsx
