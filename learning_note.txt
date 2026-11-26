@@ -1,0 +1,447 @@
+================================================================================
+  SiC Excel 照片批次自動填入工具 (PhotoToExcelTool) — 技術架構與效能優化學習筆記
+  整理主題：NAS/SMB 網路讀檔加速、ASP.NET Core 全記憶體零落地、.NET 8 高併發 I/O、
+            ClosedXML 插圖限制與前端可見區域懶載入
+================================================================================
+
+目錄：
+  第 0 章：整體問題背景與效能瓶頸全貌（舊架構 vs 新架構資料流對照）
+  第 1 章：選取資料夾與目錄掃描加速（從數十秒縮短至毫秒級）
+           1.1 為什麼瀏覽器 <input webkitdirectory> 在 NAS 上極慢？
+           1.2 技巧 A：STA 執行緒呼叫 Windows 原生現代資料夾對話框
+           1.3 技巧 B：規則導向 (Rule-Driven) + Parallel.ForEach 多執行緒查詢
+           1.4 技巧 C：DirectoryInfo.EnumerateFiles 的 SMB2 單封包特性
+  第 2 章：匯出 Excel 讀取 100% 無損原圖進記憶體加速（零壓縮、零落地）
+           2.1 揭秘 ASP.NET Core 隱藏的「64KB 偷偷寫入 %TEMP% 硬碟」陷阱
+           2.2 技巧 A：MemoryBufferThreshold = int.MaxValue 封堵暫存檔落地
+           2.3 技巧 B：兩階段管線（平行 I/O 預讀 + 循序 ClosedXML 寫入）
+           2.4 技巧 C：FileOptions.SequentialScan + 128KB 緩衝區喚醒 SMB 預讀
+           2.5 技巧 D：GC.AllocateUninitializedArray + ReadExactly 極致記憶體配置
+  第 3 章：ClosedXML 操作實戰重點與踩坑紀錄
+           3.1 圖片名稱 31 字元長度上限（Picture Name Limit）
+           3.2 圖片定位順序：為什麼必須先 MoveTo() 再 WithSize()？
+  第 4 章：前端預覽表格優化 — IntersectionObserver 取代原生 loading="lazy"
+
+================================================================================
+第 0 章：整體問題背景與效能瓶頸全貌（舊架構 vs 新架構資料流對照）
+================================================================================
+
+【實務場景條件】
+1. 照片存放於公司網路磁碟機 / 共用資料夾（NAS / SMB 協定）。
+2. 插入 Excel 的照片必須 100% 保留原始解析度與畫質（不可壓縮重編碼圖片）。
+3. 單批約數十至近百張高解析檢測照片（總計數百 MB），全程須純記憶體處理、零殘留暫存檔。
+
+【舊架構資料流（慢的原因：跨網讀兩次 + 單執行緒排隊 + 偷偷寫本機硬碟）】
+  NAS 網路硬碟
+    │ (1) 瀏覽器 <input webkitdirectory> 單執行緒遞迴掃描整個目錄樹所有無關檔案 (慢！)
+    ▼
+  瀏覽器記憶體 (將幾百 MB 原圖打包進 FormData)
+    │ (2) 透過 HTTP POST 傳送幾百 MB 給本機 127.0.0.1 後端 (多餘的記憶體複製！)
+    ▼
+  ASP.NET Core ReadFormAsync()
+    │ (3) 單檔超過預設 64KB 自動寫入 C:\Users\...\Temp\ASPNETCORE_*.tmp 硬碟！
+    │     同時觸發 Windows Defender / 企業防毒軟體逐檔掃描 (嚴重 I/O 卡頓！)
+    ▼
+  ExcelImageService 單執行緒 foreach 迴圈
+    │ (4) 一張一張從暫存串流讀回 RAM 並寫入 ClosedXML
+    ▼
+  產出 .xlsx
+
+【新架構資料流（快的原因：只傳路徑字串 + 精準子目錄掃描 + 12 執行緒平行直讀進 RAM）】
+  前端網頁
+    │ (1) 直接貼上 NAS 路徑或由 C# 開啟原生視窗，僅傳遞「一行路徑字串」給後端 (0 MB 搬運)
+    ▼
+  C# ScanRuleFolders (16 執行緒)
+    │ (2) 只針對 config.yml 指定的 30 個子資料夾平行查詢檔名與大小 (約 20~100 ms 完成)
+    ▼
+  C# ProcessExcelFromDirectory (12 執行緒 + 128KB Buffer + SequentialScan)
+    │ (3) 直接從 NAS 平行拉滿區網頻寬，一次將命中原圖無損讀入 RAM byte[] (零硬碟暫存)
+    ▼
+  ClosedXML 純記憶體組裝
+    │ (4) 從 RAM byte[] 直接包成唯讀 MemoryStream 寫入儲存格 (零網路等待)
+    ▼
+  產出 .xlsx
+
+
+================================================================================
+第 1 章：選取資料夾與目錄掃描加速（從數十秒縮短至毫秒級）
+================================================================================
+
+--------------------------------------------------------------------------------
+1.1 為什麼瀏覽器 <input webkitdirectory> 在 NAS 上極慢？
+--------------------------------------------------------------------------------
+- 本機 SSD 查詢一個檔案屬性約 0.05 ms；但跨公司區網透過 SMB 協定問一次 NAS，
+  網路來回延遲 (RTT, Round-Trip Time) 通常是 1 ~ 5 ms（相差 20 ~ 100 倍）。
+- 瀏覽器的 `<input type="file" webkitdirectory>` 不知道我們的 `config.yml` 只關心哪些目錄，
+  它會以「單執行緒」把根目錄下所有子目錄、所有無關檔案（包含備份檔、Thumbs.db 等）全部翻遍。
+  若有 1,000 個項目 × 3 ms 延遲 = 光選完資料夾就要卡住數秒至數十秒。
+
+--------------------------------------------------------------------------------
+1.2 技巧 A：STA 執行緒呼叫 Windows 原生現代資料夾對話框
+    對應檔案：PhotoToExcelTool/Services/WindowsFolderPicker.cs
+--------------------------------------------------------------------------------
+【設計痛點】
+1. 網頁瀏覽器受限於資訊安全沙盒，無法直接拿使用者輸入的 `\\NAS\...` 路徑去讀硬碟，
+   但跑在本機的 C# (.exe) 微伺服器完全具備直接存取本機與區網 NAS 的權限！
+2. Windows 的檔案/資料夾選擇對話框（底層是 Win32 COM 元件 `IFileOpenDialog`）強制要求執行緒
+   必須是 **STA (Single-Threaded Apartment，單一執行緒單元)** 模式；
+   然而 ASP.NET Core 處理 HTTP API 的預設執行緒池 (ThreadPool) 是 **MTA (多執行緒單元)**，
+   若直接在 API 內呼叫 `FolderBrowserDialog.ShowDialog()` 會直接拋出 `ThreadStateException`！
+3. 從背景 Console / Web 伺服器彈出視窗時，對話框很容易躲在 Chrome / Edge 瀏覽器視窗背後，
+   讓使用者誤以為「按鈕沒反應」（因為使用者點擊網頁時前景焦點在瀏覽器上，Windows 預設禁止背景程序直接搶奪前景焦點）；
+   而且若引用肥大的 WinForms/WPF 框架，單一執行檔發佈時還會額外產生 `wpfgfx_cor3.dll` 等外部原生 DLL，若只複製單一 `.exe` 就會因缺檔報錯。
+
+【Key Code 對照（WindowsFolderPicker.cs — 純 Win32 + Shell COM 零相依實作）】
+```csharp
+public static class WindowsFolderPicker
+{
+    // 建立 1x1 的 WS_EX_TOPMOST 置頂宿主視窗定位於瀏覽器視窗中央，並透過 AttachThreadInput 切換前景焦點，
+    // 再直接實例化 Windows 內建的 IFileOpenDialog (CLSID: DC1C5A9C-E88A-4dde-A5A1-60F82A20AEF7) 搭配 FOS_PICKFOLDERS：
+    ownerHwnd = CreateWindowExW(
+        WS_EX_TOPMOST, "STATIC", "SiCFolderPickerHost", WS_POPUP | WS_VISIBLE,
+        spawnX, spawnY, 1, 1, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
+
+    // 短暫掛載前景執行緒輸入佇列以合法取得焦點，確保彈窗 100% 浮現在瀏覽器正前方
+    bool attached = AttachThreadInput(fgThreadId, curThreadId, true);
+    BringWindowToTop(ownerHwnd);
+    SetForegroundWindow(ownerHwnd);
+    if (attached) AttachThreadInput(fgThreadId, curThreadId, false);
+
+    // 呼叫現代版系統資料夾對話框，選完僅回傳路徑字串（耗時 0ms 掃描、零外部 DLL 相依）
+    Type? dialogType = Type.GetTypeFromCLSID(ClsidFileOpenDialog, throwOnError: true);
+    dialog = (IFileOpenDialog)Activator.CreateInstance(dialogType!)!;
+    dialog.SetOptions(options | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST | FOS_NOCHANGEDIR);
+    int hr = dialog.Show(ownerHwnd);
+    if (hr == ERROR_CANCELLED_HR || hr < 0) return;
+
+    dialog.GetResult(out resultItem);
+    resultItem.GetDisplayName(SIGDN_FILESYSPATH, out string? path);
+}
+```
+
+--------------------------------------------------------------------------------
+1.3 技巧 B：規則導向 (Rule-Driven) + Parallel.ForEach 多執行緒查詢
+1.4 技巧 C：DirectoryInfo.EnumerateFiles 的 SMB2 單封包特性
+    對應檔案：PhotoToExcelTool/Services/ExcelImageService.cs -> ScanRuleFolders()
+--------------------------------------------------------------------------------
+【舊思維 vs 新思維對照】
+- ❌ 舊思維（全目錄遞迴 + 逐檔查屬性）：
+  ```csharp
+  // 災難寫法：在 NAS 上會翻遍所有無關資料夾，且 new FileInfo(f).Length 每檔多問一次網路！
+  var allFiles = Directory.GetFiles(rootPath, "*.*", SearchOption.AllDirectories);
+  foreach (var f in allFiles) { long size = new FileInfo(f).Length; ... }
+  ```
+- ✅ 新思維（只查 config.yml 指定的子資料夾 + 16 執行緒併發 + SMB2 單封包列舉）：
+  `config.yml` 裡明確寫了 `PRE/01 ~ PRE/15`、`FQC/01 ~ FQC/15`（去重後僅 30 個子資料夾）。
+  我們直接開 16 條執行緒同時針對這 30 個子資料夾呼叫 `DirectoryInfo.EnumerateFiles("*", TopDirectoryOnly)`。
+
+【Key Code 對照與細節解析（ExcelImageService.cs）】
+```csharp
+public List<ScannedPhotoInfo> ScanRuleFolders(
+    string rootFolderPath,
+    IEnumerable<string> targetRelativeFolders,
+    IEnumerable<string> acceptExtensions)
+{
+    string cleanRoot = Path.GetFullPath(rootFolderPath.Trim().Trim('"'));
+    if (!Directory.Exists(cleanRoot))
+        throw new DirectoryNotFoundException($"找不到指定的照片資料夾：{cleanRoot}");
+
+    // 1. 用 HashSet<string> 搭配 OrdinalIgnoreCase 儲存合法副檔名：
+    //    後續檢查副檔名時查找複雜度為 O(1)，且自動忽略 ".JPG" 與 ".jpg" 大小寫差異
+    var validExts = new HashSet<string>(
+        acceptExtensions
+            .Where(e => !string.IsNullOrWhiteSpace(e))
+            .Select(e => e.Trim().StartsWith('.') ? e.Trim() : $".{e.Trim()}"),
+        StringComparer.OrdinalIgnoreCase);
+
+    // 2. 將規則資料夾去重（例如多個規則共用同一個資料夾時，只查一次 NAS）
+    var distinctFolders = targetRelativeFolders
+        .Where(f => !string.IsNullOrWhiteSpace(f))
+        .Select(f => f.Trim().Replace('\\', '/').Trim('/'))
+        .Where(f => f.Length > 0)
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .ToList();
+
+    // 3. 重要：多執行緒內嚴禁使用一般 List<T>.Add()（非執行緒安全，會發生 Race Condition 崩潰或漏資料）
+    //    必須使用 System.Collections.Concurrent 下的 ConcurrentBag<T> 無鎖執行緒安全集合！
+    var results = new ConcurrentBag<ScannedPhotoInfo>();
+
+    // 4. 開啟最多 16 條執行緒同時向 NAS 查詢這批目標子資料夾
+    Parallel.ForEach(
+        distinctFolders,
+        new ParallelOptions { MaxDegreeOfParallelism = 16 },
+        relFolder =>
+        {
+            try
+            {
+                string subDirFullPath = Path.Combine(cleanRoot, relFolder.Replace('/', Path.DirectorySeparatorChar));
+                var dirInfo = new DirectoryInfo(subDirFullPath);
+                if (!dirInfo.Exists) return;
+
+                // 5. 【SMB2 關鍵效能技巧】：
+                //    DirectoryInfo.EnumerateFiles 底層呼叫 Win32 FindFirstFileEx (SMB2_FIND_ID_BOTH_DIRECTORY_INFO)，
+                //    NAS 伺服器會在「單一網路封包」中一次把該資料夾內所有檔案的 Name、Extension、Length (大小)
+                //    全部打包回傳填入 FileInfo 物件中！完全不需要逐檔開啟或額外發送 stat 網路請求！
+                foreach (var fileInfo in dirInfo.EnumerateFiles("*", SearchOption.TopDirectoryOnly))
+                {
+                    if (validExts.Contains(fileInfo.Extension))
+                    {
+                        string normalizedRelPath = $"{relFolder}/{fileInfo.Name}";
+                        results.Add(new ScannedPhotoInfo(
+                            RelativePath: normalizedRelPath,
+                            FullPath: fileInfo.FullName,
+                            FileName: fileInfo.Name,
+                            SizeBytes: fileInfo.Length));
+                    }
+                }
+            }
+            catch
+            {
+                // 單一子目錄不存在或無權限時安全跳過，後續比對邏輯會自動標記為「缺漏」
+            }
+        });
+
+    return results.OrderBy(r => r.RelativePath, StringComparer.OrdinalIgnoreCase).ToList();
+}
+```
+
+
+================================================================================
+第 2 章：匯出 Excel 讀取 100% 無損原圖進記憶體加速（零壓縮、零落地）
+================================================================================
+
+--------------------------------------------------------------------------------
+2.1 揭秘 ASP.NET Core 隱藏的「64KB 偷偷寫入 %TEMP% 硬碟」陷阱
+2.2 技巧 A：MemoryBufferThreshold = int.MaxValue 封堵暫存檔落地
+    對應檔案：PhotoToExcelTool/Program.cs
+--------------------------------------------------------------------------------
+【底層原理解析】
+許多開發者以為在 API 寫 `var form = await request.ReadFormAsync();` 再呼叫 `formFile.OpenReadStream()`
+就是純記憶體操作。其實不然！
+ASP.NET Core 的 `MultipartReaderStream` 為了防止公開網站被大量上傳塞爆伺服器 RAM，
+內建了一個預設閾值：`FormOptions.MemoryBufferThreshold = 65536`（僅 **64 KB**）！
+只要上傳的任何一張照片超過 64 KB（產線照片幾乎每張都是數 MB），ASP.NET Core 在 `ReadFormAsync()` 階段
+就會自動在 `C:\Users\<使用者>\AppData\Local\Temp\` 建立 `ASPNETCORE_<GUID>.tmp` 實體檔案寫入磁碟，
+這不僅違背「零落地」設計，更會觸發企業防毒軟體即時掃描每一個 `.tmp` 檔，造成嚴重的 I/O 延遲。
+
+【Key Code 對照（Program.cs）】
+```csharp
+// ❌ 舊寫法：只調高了總上傳上限，沒改 MemoryBufferThreshold（預設超過 64KB 照樣寫硬碟 %TEMP%！）
+builder.Services.Configure<FormOptions>(options =>
+{
+    options.MultipartBodyLengthLimit = 524_288_000; // 500 MB
+});
+
+// ✅ 新寫法：強制全記憶體緩衝 + 放寬 1GB 原圖容量與表單欄位數上限
+builder.Services.Configure<FormOptions>(options =>
+{
+    options.MultipartBodyLengthLimit = 1_073_741_824; // 1 GB，容納百張無壓縮高解析原圖
+    options.MemoryBufferThreshold = int.MaxValue;     // 關鍵：設為 int.MaxValue (約 2GB)，100% 留在 RAM 絕不寫 %TEMP%！
+    options.ValueCountLimit = 8192;                   // 提高表單陣列項目上限（預設 1024）
+});
+builder.WebHost.ConfigureKestrel(serverOptions =>
+{
+    serverOptions.Limits.MaxRequestBodySize = 1_073_741_824; // Kestrel 伺服器層級上限須同步調高
+});
+```
+
+--------------------------------------------------------------------------------
+2.3 技巧 B：兩階段管線（平行 I/O 預讀 + 循序 ClosedXML 寫入）
+    對應檔案：PhotoToExcelTool/Services/ExcelImageService.cs -> ExecuteWorkbookInsertion()
+--------------------------------------------------------------------------------
+【為什麼不能直接把原本的插圖迴圈改成 Parallel.ForEach？】
+**ClosedXML 的 `XLWorkbook` 與 `IXLWorksheet` 不是執行緒安全的（Not Thread-Safe）！**
+如果開 12 條執行緒同時對同一個 `workbook` 呼叫 `ws.AddPicture(...)`，內部的 XML 關聯表 (Relationships)、
+圖片流水號 ID 與共用資源字典會發生競爭損毀，導致拋出例外或產出的 `.xlsx` 檔案損壞打不開。
+
+【正確的高併發架構：「平行 I/O 預讀、循序記憶體寫入」】
+我們將整個處理拆成清晰的階段：
+- **階段 1（盤點需求，跳過無效工作表）**：
+  先檢查 Excel 底稿內實際存在哪些工作表（若某張 Sheet 在底稿中不存在，直接記警告跳過，連對應的照片都不用去 NAS 讀！），
+  收集出真正需要插入的所有照片清單 `uniqueTargetKeys` 與座標資訊 `pendingPlacements`。
+- **階段 2（12 執行緒併發拉圖進 RAM）**：
+  針對 `uniqueTargetKeys`，用 `Parallel.ForEach`（`MaxDegreeOfParallelism = 12`）同時建立 12 條 SMB 讀取通道，
+  直接把所有原圖無損讀入 `ConcurrentDictionary<string, byte[]>`。
+  單條連線受限於網路延遲跑不滿頻寬，12 條併發能瞬間填滿公司區網頻寬！
+- **階段 3（單執行緒純 RAM 寫入 ClosedXML）**：
+  此時所有照片的 `byte[]` 都已經躺在記憶體裡了，再用單執行緒 `foreach` 依序包成
+  `new MemoryStream(photoBytes, writable: false)` 塞進 `ws.AddPicture()`，安全又極速（純記憶體操作僅需數十毫秒）！
+
+【Key Code 對照（ExcelImageService.cs）】
+```csharp
+// 階段 2：12 執行緒平行從 NAS 預讀所有命中的原圖至執行緒安全字典 ConcurrentDictionary
+var byteCache = new ConcurrentDictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
+var errors = new ConcurrentDictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+Parallel.ForEach(
+    matchedKeys,
+    new ParallelOptions { MaxDegreeOfParallelism = 12 },
+    targetKey =>
+    {
+        if (!pathMap.TryGetValue(targetKey, out var fullPath)) return;
+        try
+        {
+            byteCache[targetKey] = ReadFileBytesSequential(fullPath); // 100% 原始位元組無損讀入 RAM
+        }
+        catch (Exception ex)
+        {
+            errors[targetKey] = ex.Message;
+        }
+    });
+
+// 階段 3：單執行緒從 RAM (byteCache) 極速寫入 ClosedXML（零網路等待、無執行緒安全問題）
+foreach (var item in pendingPlacements)
+{
+    if (!byteCache.TryGetValue(item.TargetKey, out var photoBytes)) continue;
+
+    // writable: false 建立唯讀記憶體串流包裝既有 byte[]，零額外陣列複製！
+    using var imgStream = new MemoryStream(photoBytes, writable: false);
+
+    string picName = $"{item.StageName}_{item.PhotoKey.Trim()}_{item.CellAddress.Trim()}".Replace(" ", "_");
+    if (picName.Length > 31) picName = picName[..31];
+
+    item.Worksheet.AddPicture(imgStream, picName)
+        .MoveTo(item.Worksheet.Cell(item.CellAddress.Trim()), item.LeftOffsetPx, item.TopOffsetPx)
+        .WithSize(item.WidthPx, item.HeightPx);
+}
+```
+
+--------------------------------------------------------------------------------
+2.4 技巧 C：FileOptions.SequentialScan + 128KB 緩衝區喚醒 SMB 預讀
+2.5 技巧 D：GC.AllocateUninitializedArray + ReadExactly 極致記憶體配置
+    對應檔案：PhotoToExcelTool/Services/ExcelImageService.cs -> ReadFileBytesSequential()
+--------------------------------------------------------------------------------
+【舊寫法 vs .NET 8 頂尖效能寫法對照】
+
+```csharp
+// ❌ 常見普通寫法（慢且浪費數倍記憶體）：
+using var fs = File.OpenRead(fullPath); // 預設 buffer 僅 4KB、無 SequentialScan 提示、FileShare.Read 易遇鎖檔
+using var ms = new MemoryStream();      // 初始容量為 0，隨寫入不斷 2 倍擴容 (4KB->8KB->...->8MB->16MB) 反覆複製陣列
+fs.CopyTo(ms);
+return ms.ToArray();                    // 最後又再配置一塊新陣列把資料複製出來，造成大量 LOH (大型物件堆積) GC 壓力！
+```
+
+```csharp
+// ✅ 新寫法（ExcelImageService.cs -> ReadFileBytesSequential）：
+private const int SmbReadBufferSize = 131072; // 128 KB
+
+private static byte[] ReadFileBytesSequential(string fullPath)
+{
+    using var fs = new FileStream(
+        fullPath,
+        FileMode.Open,
+        FileAccess.Read,
+        FileShare.ReadWrite,             // 重點 1：允許其他同事同時用看圖軟體開啟該照片，不發生檔案鎖定例外
+        bufferSize: SmbReadBufferSize,   // 重點 2：128KB 大緩衝區（預設 4KB 的 32 倍），大幅減少跨網封包碎片與系統呼叫
+        options: FileOptions.SequentialScan); // 重點 3：通知 Windows 核心與 SMB 客戶端「此檔將從頭到尾循序讀完」，
+                                              //         自動觸發作業系統底層 SMB Read-Ahead Pipelining（背景預讀管線）！
+
+    long len = fs.Length;
+    if (len > 0 && len <= int.MaxValue)
+    {
+        // 重點 4 (.NET 5+)：GC.AllocateUninitializedArray<byte>
+        // 一般 `new byte[len]` 配置幾 MB 陣列時，CLR 預設會花 CPU 與記憶體頻寬先把整塊陣列「全部填滿 0」，
+        // 但下一行我們馬上就要把照片資料完整覆寫進去，填 0 完全是白做工！
+        // AllocateUninitializedArray 精準配置恰好等於檔案長度的唯一一塊陣列，且跳過填零步驟（零擴容、零多餘複製）。
+        var buffer = GC.AllocateUninitializedArray<byte>((int)len);
+
+        // 重點 5 (.NET 7+)：fs.ReadExactly(buffer)
+        // 網路串流呼叫傳統 fs.Read(buffer, 0, len) 時，可能因為網路封包尚未全數抵達而「只讀到一部分就提早返回」；
+        // ReadExactly 會由底層自動循環填滿整個 buffer 為止（若檔案意外截斷則拋出 EndOfStreamException），安全又簡潔！
+        fs.ReadExactly(buffer);
+        return buffer;
+    }
+
+    using var ms = new MemoryStream();
+    fs.CopyTo(ms);
+    return ms.ToArray();
+}
+```
+
+
+================================================================================
+第 3 章：ClosedXML 操作實戰重點與踩坑紀錄
+================================================================================
+
+--------------------------------------------------------------------------------
+3.1 圖片名稱 31 字元長度上限（Picture Name Limit）
+    對應檔案：PhotoToExcelTool/Services/ExcelImageService.cs
+--------------------------------------------------------------------------------
+【錯誤訊息】
+`Picture names cannot be more than 31 characters`
+
+【踩坑原因與修正】
+- ClosedXML 規定：**同一張工作表 (`IXLWorksheet`) 內的圖片名稱不可重複，且最長不可超過 31 個字元**。
+- 舊寫法：`$"P_{sheetName}_{stageName}_{photoKey}_{cellAddress.Trim()}"`
+  當遇到工作表名稱較長（如 `Susceptor Sidewalls`）：
+  - 編號 `13` (`B7`)：`P_Susceptor_Sidewalls_IQC_13_B7` 剛好 **31 字元**（驚險通過）。
+  - 編號 `14` (`B28`)：`P_Susceptor_Sidewalls_IQC_14_B28` 變成 **32 字元**，當場拋出例外失敗！
+- 修正原則：圖片名稱只需要在「同一張工作表內」唯一即可，根本不需要把 `sheetName` 放進名稱裡！
+  改為 `{階段}_{編號}_{儲存格}`（如 `IQC_14_B28` 僅 10 字元），並加上 `picName[..31]` 防呆截斷：
+  ```csharp
+  string keyTrimmed = item.PhotoKey.Trim();
+  string picName = $"{item.StageName}_{keyTrimmed}_{item.CellAddress.Trim()}".Replace(" ", "_");
+  if (picName.Length > 31)
+  {
+      picName = picName[..31]; // C# 8.0 Range 切片語法，確保永遠不超過 31 字元上限
+  }
+  ```
+
+--------------------------------------------------------------------------------
+3.2 圖片定位順序：為什麼必須先 MoveTo() 再 WithSize()？
+--------------------------------------------------------------------------------
+- ClosedXML 新增圖片預設的錨點模式 (Placement) 是 `XLPicturePlacement.MoveAndSize`（TwoCellAnchor，隨儲存格縮放）。
+- 若先設定大小或搞錯順序，容易觸發 Placement 限制例外或導致圖片被單一儲存格壓扁。
+- 正確標準呼叫鏈：
+  ```csharp
+  ws.AddPicture(imgStream, picName)
+    .MoveTo(ws.Cell(cellAddress.Trim()), leftOffsetPx, topOffsetPx) // 1. 先錨定左上角儲存格與像素偏移（自動切為 OneCellAnchor）
+    .WithSize(widthPx, heightPx);                                   // 2. 再指定固定像素寬高（96 DPI：1cm = 37.79527559px）
+  ```
+
+
+================================================================================
+第 4 章：前端預覽表格優化 — IntersectionObserver 取代原生 loading="lazy"
+================================================================================
+對應檔案：index.html / wwwroot/index.html -> renderPreviewTable()
+
+【踩坑原因：為什麼寫了 <img loading="lazy"> 還是會一次拉幾十張 NAS 大圖？】
+- Chromium (Chrome / Edge) 內建的 `<img loading="lazy">` 預設是相對於「整個瀏覽器視窗」計算距離，
+  且在本機連線 (`127.0.0.1`) 下預載緩衝區 (Root Margin) 高達 **1250px ~ 2500px**！
+- 我們的預覽表格放在固定高度 `max-h-[520px] overflow-y-auto` 的內部捲軸容器中，每列高度約 96px，
+  導致表格一渲染出來，瀏覽器立刻同時向後端與 NAS 發出 25 ~ 35+ 張高解析原圖請求，塞爆區網頻寬並造成解碼卡頓。
+
+【Key Code 解決方案：綁定內部捲動容器的 IntersectionObserver + HTTP 快取】
+```javascript
+// 1. 建立綁定在 #previewScrollContainer 捲動容器上的觀察器，上下僅預載 160px（畫面同時只載入 4~6 張）
+const scrollContainer = document.getElementById('previewScrollContainer');
+const placeholderGif = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+
+appState.thumbObserver = new IntersectionObserver((entries, obs) => {
+  for (const entry of entries) {
+    if (entry.isIntersecting) {
+      const img = entry.target;
+      const realSrc = img.getAttribute('data-src');
+      if (realSrc) {
+        img.src = realSrc;           // 真正捲動進入畫面時，才賦值 src 向後端串流該張圖片
+        img.removeAttribute('data-src');
+      }
+      obs.unobserve(img);            // 載入後立即解除監聽，節省資源
+    }
+  }
+}, {
+  root: scrollContainer,
+  rootMargin: '160px 0px'
+});
+```
+搭配後端 `/api/photo-file` 設定 `response.Headers["Cache-Control"] = "private, max-age=300";`：
+- 剛選完資料夾時，只會載入第一屏看得到的 4~5 張縮圖，使用者 0.1 秒就能直接按匯出，完全不互搶 NAS 頻寬。
+- 當使用者在「全部 / 已匹配 / 缺漏」按鈕之間來回切換時，已看過的縮圖直接命中瀏覽器記憶體快取（0ms，不再重讀 NAS）。
+
+================================================================================
+筆記結束 — 建議搭配專案原始碼對照閱讀：
+  - PhotoToExcelTool/Services/ExcelImageService.cs
+  - PhotoToExcelTool/Services/WindowsFolderPicker.cs
+  - PhotoToExcelTool/Program.cs
+  - index.html
+================================================================================

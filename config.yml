@@ -8,20 +8,16 @@ rules:
       width: 7.01        # 照片寬度 (cm)
       height: 8.65       # 照片高度 (cm)
       left_padding: 2.0
-      top_padding: 1.0 #如果有要設定就新增top_padding,否則採用預設的1mm
-      
     IQC:
       folder: "PRE/01"
       cells:
-        Pre1: "B7"
-        Pre2: "D7"
-
-
+        1: "B7"
+        2: "D7"
     FQC:
       folder: "FQC/01"
       cells:
-        1: "F7"
-        2: "H7"
+        51: "F7"
+        52: "H7"
 
   - sheet: "Ring #2"
     size:
@@ -31,15 +27,13 @@ rules:
     IQC:
       folder: "PRE/02"
       cells:
-        1: "B7"
-        2: "D7"
-
-
+        3: "B7"
+        4: "D7"
     FQC:
       folder: "FQC/02"
       cells:
-        1: "F7"
-        2: "H7"
+        53: "F7"
+        54: "H7"
 
   - sheet: "Ring #3"
     size:
@@ -49,15 +43,13 @@ rules:
     IQC:
       folder: "PRE/03"
       cells:
-        1: "B7"
-        2: "D7"
-
-
+        5: "B7"
+        6: "D7"
     FQC:
       folder: "FQC/03"
       cells:
-        1: "F7"
-        2: "H7"
+        55: "F7"
+        56: "H7"
 
   - sheet: "Ring #4"
     size:
@@ -67,15 +59,15 @@ rules:
     IQC:
       folder: "PRE/04"
       cells:
-        1: "B7"
-        2: "D7"
+        7: "B7"
+        8: "D7"
 
 
     FQC:
       folder: "FQC/04"
       cells:
-        1: "F7"
-        2: "H7"
+        57: "F7"
+        58: "H7"
 
   - sheet: "Ring #5"
     size:
@@ -85,15 +77,15 @@ rules:
     IQC:
       folder: "PRE/05"
       cells:
-        1: "B7"
-        2: "D7"
+        9: "B7"
+        10: "D7"
 
 
     FQC:
       folder: "FQC/05"
       cells:
-        1: "F7"
-        2: "H7"
+        59: "F7"
+        60: "H7"
 
   - sheet: "Ring #6"
     size:
@@ -103,15 +95,15 @@ rules:
     IQC:
       folder: "PRE/06"
       cells:
-        1: "B7"
-        2: "D7"
+        11: "B7"
+        12: "D7"
 
 
     FQC:
       folder: "FQC/06"
       cells:
-        1: "F7"
-        2: "H7"
+        61: "F7"
+        62: "H7"
 
   - sheet: "Susceptor Sidewalls"
     size:
@@ -121,21 +113,19 @@ rules:
     IQC:
       folder: "PRE/07"
       cells:
-        1: "B7"
-        2: "B28"
-        3: "B49"
-        4: "B70"
-        5: "B91"
-        6: "B112"
+        13: "B7"
+        14: "B28"
+        15: "B49"
+        16: "B70"
+
     FQC:
       folder: "FQC/07"
       cells:
-        1: "F7"
-        2: "F28"
-        3: "F49"
-        4: "F70"
-        5: "F91"
-        6: "F112"
+        63: "F7"
+        64: "F28"
+        65: "F49"
+        66: "F70"
+
 
   - sheet: "Susceptor Sidewalls (2)"
     size:
@@ -145,22 +135,19 @@ rules:
     IQC:
       folder: "PRE/08"
       cells:
-        1: "B7"
-        2: "B28"
-        3: "B49"
-        4: "B70"
-        5: "B91"
-        6: "B112"
+        17: "B7"
+        18: "B28"
+        19: "B49"
+        20: "B70"
+
     FQC:
       folder: "FQC/08"
       cells:
-        1: "F7"
-        2: "F28"
-        3: "F49"
-        4: "F70"
-        5: "F91"
-        6: "F112"
-        
+        67: "F7"
+        68: "F28"
+        69: "F49"
+        70: "F70"
+
   - sheet: "Upper Half Moon"
     size:
       width: 8.50        # 照片寬度 (cm)
@@ -169,22 +156,18 @@ rules:
     IQC:
       folder: "PRE/09"
       cells:
-        1: "B7"
-        2: "B28"
-        3: "B49"
-        4: "B70"
-        5: "B91"
-        6: "B112"
+        21: "B7"
+        22: "B28"
+        23: "B49"
+
 
     FQC:
       folder: "FQC/09"
       cells:
-        1: "F7"
-        2: "F28"
-        3: "F49"
-        4: "F70"
-        5: "F91"
-        6: "F112"
+        71: "F7"
+        72: "F28"
+        73: "F49"
+
 
   - sheet: "Transition Piece 2"
     size:
@@ -194,22 +177,23 @@ rules:
     IQC:
       folder: "PRE/10"
       cells:
-        1: "B7"
-        2: "B28"
-        3: "B49"
-        4: "B70"
-        5: "B91"
-        6: "B112"
+        24: "B7"
+        25: "B28"
+        26: "B49"
+        27: "B70"
+        28: "B91"
+        29: "B112"
 
     FQC:
       folder: "FQC/10"
       cells:
-        1: "F7"
-        2: "F28"
-        3: "F49"
-        4: "F70"
-        5: "F91"
-        6: "F112"
+        74: "F7"
+        75: "F28"
+        76: "F49"
+        77: "F70"
+        78: "F91"
+        79: "F112"
+
   - sheet: "6in.Central Prot Cover"
     size:
       width: 8.50        # 照片寬度 (cm)
@@ -218,22 +202,17 @@ rules:
     IQC:
       folder: "PRE/11"
       cells:
-        1: "B7"
-        2: "B28"
-        3: "B49"
-        4: "B70"
-        5: "B91"
-        6: "B112"
+        30: "B7"
+        31: "B28"
+        32: "B49"
+
 
     FQC:
       folder: "FQC/11"
       cells:
-        1: "F7"
-        2: "F28"
-        3: "F49"
-        4: "F70"
-        5: "F91"
-        6: "F112"
+        80: "F7"
+        81: "F28"
+        82: "F49"
 
   - sheet: "6in.Left Upstream Prot Cover"
     size:
@@ -243,22 +222,17 @@ rules:
     IQC:
       folder: "PRE/12"
       cells:
-        1: "B7"
-        2: "B28"
-        3: "B49"
-        4: "B70"
-        5: "B91"
-        6: "B112"
+        33: "B7"
+        34: "B28"
+        35: "B49"
 
     FQC:
       folder: "FQC/12"
       cells:
-        1: "F7"
-        2: "F28"
-        3: "F49"
-        4: "F70"
-        5: "F91"
-        6: "F112"
+        83: "F7"
+        84: "F28"
+        85: "F49"
+
 
   - sheet: "6in.Right Upstream Prot Cover"
     size:
@@ -268,22 +242,18 @@ rules:
     IQC:
       folder: "PRE/13"
       cells:
-        1: "B7"
-        2: "B28"
-        3: "B49"
-        4: "B70"
-        5: "B91"
-        6: "B112"
+        36: "B7"
+        37: "B28"
+        38: "B49"
+
 
     FQC:
       folder: "FQC/13"
       cells:
-        1: "F7"
-        2: "F28"
-        3: "F49"
-        4: "F70"
-        5: "F91"
-        6: "F112"
+        86: "F7"
+        87: "F28"
+        88: "F49"
+
 
   - sheet: "6in.Long Right Prot Cover"
     size:
@@ -293,22 +263,20 @@ rules:
     IQC:
       folder: "PRE/14"
       cells:
-        1: "B7"
-        2: "B28"
-        3: "B49"
-        4: "B70"
-        5: "B91"
-        6: "B112"
+        39: "B7"
+        40: "B28"
+        41: "B49"
+        42: "B70"
+
 
     FQC:
       folder: "FQC/14"
       cells:
-        1: "F7"
-        2: "F28"
-        3: "F49"
-        4: "F70"
-        5: "F91"
-        6: "F112"
+        89: "F7"
+        90: "F28"
+        91: "F49"
+        92: "F70"
+
 
   - sheet: "6in.Long Left Prot Cover"
     size:
@@ -318,27 +286,25 @@ rules:
     IQC:
       folder: "PRE/15"
       cells:
-        1: "B7"
-        2: "B28"
-        3: "B49"
-        4: "B70"
-        5: "B91"
-        6: "B112"
+        43: "B7"
+        44: "B28"
+        45: "B49"
+        46: "B70"
+
 
     FQC:
       folder: "FQC/15"
       cells:
-        1: "F7"
-        2: "F28"
-        3: "F49"
-        4: "F70"
-        5: "F91"
-        6: "F112"
+        93: "F7"
+        94: "F28"
+        95: "F49"
+        96: "F70"
 
 
 
 
 
+ 
 
 
 
